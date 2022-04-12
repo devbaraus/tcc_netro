@@ -1,0 +1,10 @@
+audiomentations==0.24.0
+autopep8==1.6.0
+keras==2.7.0
+librosa==0.8.1
+matplotlib==3.5.1
+numpy==1.20.3
+pandas==1.4.1
+praudio==0.1.0
+sklearn==0.0
+tensorflow-gpu==2.7.0
