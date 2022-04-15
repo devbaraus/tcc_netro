@@ -19,7 +19,6 @@ def load_mat_representation(input_path):
     """
     mat_dict = sio.loadmat(input_path)
 
-    mapping = mat_dict['mapping'][0]
     label = mat_dict['label'][0]
     length = mat_dict['length'][0]
     filename = mat_dict['filename'][0]
@@ -29,7 +28,6 @@ def load_mat_representation(input_path):
 
     return {
         'representation': representation,
-        'mapping': mapping,
         'label': label,
         'length': length,
         'filename': filename,

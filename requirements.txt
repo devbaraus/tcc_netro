@@ -8,3 +8,4 @@ pandas==1.4.1
 praudio==0.1.0
 sklearn==0.0
 tensorflow-gpu==2.7.0
+noisereduce==2.0.0

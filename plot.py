@@ -2,6 +2,7 @@
 from calendar import c
 import math
 from matplotlib import pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 from praudio import utils
 import seaborn as sns
@@ -20,6 +21,13 @@ def plot_confusion_matrix(confusion_matrix, size, save_path=''):
     plt.ylabel('Actuals', fontsize=18)
     plt.title('Confusion Matrix', fontsize=18)
 
+    # ax.xaxis.set_ticks(np.arange(0, size, 1))
+    # ax.yaxis.set_ticks(np.arange(0, size, 1))
+
+    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+    plt.grid()
     fig.tight_layout()
     plt.show()
     plt.draw()

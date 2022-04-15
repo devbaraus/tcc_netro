@@ -1,3 +1,7 @@
+# %%
+from email.mime import audio
+from fileinput import filename
+from heapq import merge
 import json
 import os
 import shutil
@@ -10,6 +14,7 @@ import scipy.io as sio
 from praudio import utils
 from sklearn.model_selection import train_test_split
 from plot import plot_class_distribution
+import eyed3
 
 from utils import merge_dicts
 
@@ -19,7 +24,7 @@ SAMPLES_TO_CONSIDER = 22050  # 1 sec. of audio
 SEED = 42
 
 
-def annotate_dataset(dataset_path: str, output_path: str, sr: int = 24000, extract=[], plot_distribution=False):
+def annotate_dataset(dataset_path: str, output_path: str, sr: int = 24000, extract: int = None, plot_distribution=False):
     """
     It takes in a dataset path and outputs a metadata.csv file and a folder of audio files.
 
@@ -31,62 +36,92 @@ def annotate_dataset(dataset_path: str, output_path: str, sr: int = 24000, extra
     :type sample_rate: int (optional)
     """
 
-    extract = [str(k) for k in extract]
-
     base_data = {
-        "mapping": [],
         "label": [],
         "sample_rate": [],
         "length": [],
+        "artists": [],
+        "album": [],
+        "title": [],
+        "genre": [],
+        "thumbnail": [],
         "filename": [],
     }
 
     utils.create_dir_hierarchy(output_path + '/audio')
+    utils.create_dir_hierarchy(output_path + '/img')
 
     # loop through all sub-dirs
-    def _run(i, dirpath, filenames):
+    def _run(i, filepath):
         # for i, (dirpath, dirnames, filenames) in enumerate(os.walk(dataset_path)):
         data = base_data.copy()
 
-        # ensure we're at sub-folder level
-        if dirpath is not dataset_path:
-            if len(extract) and not dirpath.split("/")[-1] in extract:
+        try:
+            dirpath = filepath.split('/')[:-1]
+            filename = filepath.split('/')[-1]
+
+            filepath_wav = filepath.replace('mp3', 'wav')
+            filename_wav = filename.replace('.mp3', '.wav')
+
+            if not os.path.exists(filepath_wav):
+                print(f'{filepath_wav} does not exist')
                 return data
 
-            label = dirpath.split("/")[-1]
-            # save label (i.e., sub-folder name) in the mapping
-            print("\nProcessing: '{}'".format(label))
+            signal, sample_rate = librosa.load(filepath_wav,
+                                               sr=sr,
+                                               mono=True)
 
-            # process all audio files in sub-dir and store MFCCs
-            for f in filenames:
-                file_path = os.path.join(dirpath, f)
+            audioinfo = eyed3.load(filepath)
 
-                # load audio file and slice it to ensure length consistency among different files
-                signal, sample_rate = librosa.load(file_path,
-                                                   sr=sr,
-                                                   mono=True)
+            if audioinfo is None:
+                return data
 
-                data["mapping"].append(label)
-                data['sample_rate'].append(sample_rate)
-                data['length'].append(len(signal) / sample_rate)
-                data["label"].append(i - 1)
-                data["filename"].append(f)
+            if audioinfo.tag.images[0].mime_type != 'image/jpeg':
+                return data
 
-                sio.wavfile.write(
-                    f'{output_path}/audio/{f}', sample_rate, signal)
+            # SAVE THUMBNAIL
+            image_filename = filename.split('.')[0] + '.jpg'
+
+            with open(f"{output_path}/img/{image_filename}", "wb") as fh:
+                fh.write(audioinfo.tag.images[0].image_data)
+
+            data["thumbnail"].append(image_filename)
+
+            sio.wavfile.write(
+                f'{output_path}/audio/{filename_wav}', sample_rate, signal)
+
+            data['artists'].append(audioinfo.tag.artist)
+            data['album'].append(audioinfo.tag.album)
+            data['title'].append(audioinfo.tag.title)
+            data['genre'].append(
+                audioinfo.tag.genre.name if audioinfo.tag.genre else 'unknown')
+
+            data['sample_rate'].append(sample_rate)
+            data['length'].append(int((len(signal) / sample_rate) * 1000))
+            data["label"].append(i)
+            data["filename"].append(filename_wav)
+        except RuntimeError:
+            print(f'{filename} does not have an image')
 
         return data
 
-    dicts = Parallel(n_jobs=-1)(delayed(_run)(i, dirpath, filenames)
-                                for i, (dirpath, _, filenames) in enumerate(os.walk(dataset_path)))
+    filename_list = []
+
+    for dirpath, _, filenames in os.walk(dataset_path):
+        for f in filenames:
+            if f.endswith('.mp3'):
+                filename_list.append(f'{dirpath}/{f}')
+
+    dicts = Parallel(n_jobs=-1)(delayed(_run)(i, filename)
+                                for i, filename in enumerate(filename_list) if extract and i < extract)
 
     data = merge_dicts(base_data, *dicts)
 
-    if plot_class_distribution:
-        labels, count = np.unique(data['label'], return_counts=True)
+    # if plot_class_distribution:
+    #     labels, count = np.unique(data['label'], return_counts=True)
 
-        plot_class_distribution(labels,
-                                count, save_path=f'{output_path}')
+    #     plot_class_distribution(labels,
+    #                             count, save_path=f'{output_path}')
 
     pd.DataFrame.from_dict(data).to_csv(f'{output_path}/metadata.csv',
                                         index=False)
@@ -266,10 +301,16 @@ def split_dataset(input_dataset: str, output_path: str, validation: bool = True,
             shutil.copy(src, dst)
 
 
+# %%
 if __name__ == '__main__':
-    annotate_inference('/src/datasets/ifgaudio',
-                       '/src/tcc/dataset/inference',
-                       '/src/tcc/models/base_portuguese_40/SEG_1/MFCC_18/1649037587_71.875',
-                       '/src/tcc/catalog.csv')
+    annotate_dataset('/src/spotify/mp3',
+                     '/src/tcc_netro/dataset/spotify_20',
+                     extract=20)
+    # annotate_inference('/src/datasets/ifgaudio',
+    #                    '/src/tcc/dataset/inference',
+    #                    '/src/tcc/models/base_portuguese_40/SEG_1/MFCC_18/1649037587_71.875',
+    #                    '/src/tcc/catalog.csv')
     # prepare_raw_dataset(DATASET_PATH, OUTPUTDIR_PATH)
     # split_dataset('/src/tcc_devbaraus/dataset/base', '/src/tcc_devbaraus/dataset', True)
+
+# %%

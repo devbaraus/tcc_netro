@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pickle as pkl
 import time
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from preprocess import augment_signal, segment_signal, represent_signal, represent_dataset, segment_dataset
+from preprocess import transform_samples, segment_signal, represent_signal, represent_dataset, segment_dataset
 
 from praudio import utils
 
@@ -21,9 +21,6 @@ from plot import plot_class_distribution, plot_confusion_matrix, plot_history
 from train import build_perceptron, train_model
 
 parser = argparse.ArgumentParser(description='Arguments algo')
-
-parser.add_argument('--ip', type=str, action='store', dest='ip',
-                    required=False, help='IP', default=None)
 
 parser.add_argument('-c', type=int, action='store', dest='coeff', required=False, help='Coeficientes',
                     default=None)
@@ -44,13 +41,13 @@ parser.add_argument('-b', type=str, action='store', dest='base', required=False,
 args, _ = parser.parse_known_args()
 
 # %%
-BASE_DATASETS = '/src/datasets'
-ANNOTATE_DIR = '/src/tcc/dataset'
-MODELS_DIR = '/src/tcc/models'
-DATASET_DIR = args.base or 'base_portuguese_20'
+BASE_DATASETS = '/src/'
+ANNOTATE_DIR = '/src/tcc_netro/dataset'
+MODELS_DIR = '/src/tcc_netro/models'
+DATASET_DIR = args.base or 'spotify_20'
 
-ANNOTATE_DATASET = True
-SPLIT_DATESET = True
+ANNOTATE_DATASET = False
+SPLIT_DATESET = False
 SEGMENT_TEST = True
 SEGMENT_TRAIN = True
 SEGMENT_VALID = True
@@ -59,21 +56,21 @@ REPRESENT_TRAIN = True
 REPRESENT_VALID = True
 
 # MODEL ARCHITECTURE
-MODEL_DENSE_1 = 60
-MODEL_DROPOUT_1 = 0
-MODEL_DENSE_2 = 0
+MODEL_DENSE_1 = 30
+MODEL_DROPOUT_1 = 0.3
+MODEL_DENSE_2 = 30
 MODEL_DROPOUT_2 = 0
 MODEL_DENSE_3 = 0
 
 # MODEL TRAINING
-EPOCHS = 100
+EPOCHS = 1000
 BATCH_SIZE = 32
-PATIENCE = 5
+PATIENCE = 20
 LEARNING_RATE = 0.0001
 
 # SEGMENTATION
 SAMPLE_RATE = 24000
-SEGMENT_LENGTH = args.segment or 2
+SEGMENT_LENGTH = args.segment or 1
 OVERLAP_SIZE = args.overlap or 0.0
 AUGMENT_SIZE = args.augmentation or 30
 
@@ -98,41 +95,53 @@ if SPLIT_DATESET and not os.path.exists(f'{ANNOTATE_DIR}/{DATASET_DIR}/train'):
 
 # %%
 BASE_TRANSFORM = [
-    am.Trim(top_db=20, p=1),
+    # am.Trim(top_db=20, p=1),
     am.Normalize(p=1),
 ]
 
 TRAIN_TRANSFORM = [
     am.AddGaussianSNR(min_snr_in_db=24, max_snr_in_db=40, p=0.8),
     am.HighPassFilter(min_cutoff_freq=60, max_cutoff_freq=100, p=0.8),
-    am.LowPassFilter(min_cutoff_freq=3400, max_cutoff_freq=4000, p=0.8),
-    am.TimeStretch(min_rate=0.75, max_rate=2,
-                   leave_length_unchanged=False, p=0.5),
+    am.LowPassFilter(min_cutoff_freq=3400, max_cutoff_freq=10000, p=0.8),
+    # am.TimeStretch(min_rate=0.75, max_rate=2,
+    #                leave_length_unchanged=False, p=0.5),
 ]
+
+# TEST_VALID_TRANSFORM = [
+#     am.AddGaussianSNR(min_snr_in_db=24, max_snr_in_db=40, p=0.5),
+#     am.HighPassFilter(min_cutoff_freq=60, max_cutoff_freq=100, p=0.5),
+#     am.LowPassFilter(min_cutoff_freq=3400, max_cutoff_freq=10000, p=0.5),
+#     # am.TimeStretch(min_rate=0.75, max_rate=2,
+#     #                leave_length_unchanged=True, p=0.5),
+# ]
 
 # %%
 BASE_DIR = f'{ANNOTATE_DIR}/{DATASET_DIR}/SEG_{SEGMENT_LENGTH}_OVERLAP_{int(OVERLAP_SIZE*100)}_AUG_{AUGMENT_SIZE}'
 
+# %%
 if SEGMENT_TEST and not os.path.exists(f'{BASE_DIR}/test'):
-    segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}/test',
+    segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
                     f'{BASE_DIR}/test',
-                    base_trans=BASE_TRANSFORM,
+                    base_trans=[*BASE_TRANSFORM, *TRAIN_TRANSFORM],
                     overlap_size=OVERLAP_SIZE,
                     segment_length=SEGMENT_LENGTH,
-                    plot_distribution=True)
-
+                    plot_distribution=True,
+                    aug_per_segment=True,
+                    reduce_noise=0.2)
 # %%
 if SEGMENT_VALID and not os.path.exists(f'{BASE_DIR}/valid'):
-    segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}/valid',
+    segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
                     f'{BASE_DIR}/valid',
-                    base_trans=BASE_TRANSFORM,
+                    base_trans=[*BASE_TRANSFORM, *TRAIN_TRANSFORM],
                     overlap_size=OVERLAP_SIZE,
                     segment_length=SEGMENT_LENGTH,
-                    plot_distribution=True)
+                    plot_distribution=True,
+                    aug_per_segment=True,
+                    reduce_noise=0.2)
 
 # %%
 if SEGMENT_TRAIN and not os.path.exists(f'{BASE_DIR}/train'):
-    segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}/train',
+    segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
                     f'{BASE_DIR}/train',
                     base_trans=BASE_TRANSFORM,
                     extra_trans=TRAIN_TRANSFORM,
@@ -141,6 +150,7 @@ if SEGMENT_TRAIN and not os.path.exists(f'{BASE_DIR}/train'):
                     segment_length=SEGMENT_LENGTH,
                     plot_distribution=True)
 
+# exit()
 # %% REPRESENTATION
 if REPRESENT_TEST and not os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/test'):
     mat_dict_test = represent_dataset(f'{BASE_DIR}/test',
@@ -170,7 +180,6 @@ if not REPRESENT_TEST or os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/test'):
     mat_dict_test = load_mat_representation(
         f'{BASE_DIR}/MFCC_{MFCC_COEFF}/test/representation.mat')
 
-
 if not REPRESENT_TRAIN or os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/train'):
     mat_dict_train = load_mat_representation(
         f'{BASE_DIR}/MFCC_{MFCC_COEFF}/train/representation.mat')
@@ -191,12 +200,12 @@ y_test = np.array(mat_dict_test['label'])
 # %% SCALER
 se = StandardScaler()
 
-X_train_rep = se.fit_transform(
-    X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape)
-X_valid_rep = se.transform(
-    X_valid.reshape(-1, X_valid.shape[-1])).reshape(X_valid.shape)
-X_test_rep = se.transform(
-    X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape)
+X_train_rep = tf.convert_to_tensor(se.fit_transform(
+    X_train.reshape(-1, X_train.shape[-1])).reshape(X_train.shape))
+X_valid_rep = tf.convert_to_tensor(se.transform(
+    X_valid.reshape(-1, X_valid.shape[-1])).reshape(X_valid.shape))
+X_test_rep = tf.convert_to_tensor(se.transform(
+    X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape))
 
 
 # %% BUILD MODEL
@@ -223,7 +232,7 @@ history = train_model(model,
                       y_train=y_train,
                       X_validation=X_valid_rep,
                       y_validation=y_valid,
-                      verbose=0)
+                      verbose=2)
 
 
 # %%
@@ -286,9 +295,9 @@ overview = {
     'augment_size': AUGMENT_SIZE,
     'overlap_size': OVERLAP_SIZE,
 
-    'train_shape': X_train_rep.shape,
-    'valid_shape': X_valid_rep.shape,
-    'test_shape': X_test_rep.shape,
+    'train_shape': X_train_rep.numpy().shape,
+    'valid_shape': X_valid_rep.numpy().shape,
+    'test_shape': X_test_rep.numpy().shape,
 
     'scores': {
         'test_loss': test_loss,
@@ -315,10 +324,6 @@ overview = {
         'n_fft': MFCC_N_FFT,
         'hop_length': MFCC_HOP_LENGTH,
     },
-
-    'classes': {
-        str(mat_dict_test['mapping'][index]): int(mat_dict_test['label'][index]) for index, _ in enumerate(mat_dict_test['mapping'])
-    }
 }
 
 # %%

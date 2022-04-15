@@ -19,7 +19,7 @@ import audiomentations as am
 
 from loaders import load_mat_representation
 from plot import plot_class_distribution, plot_confusion_matrix
-from preprocess import augment_signal, pipeline_signal, represent_signal, segment_dataset, segment_signal
+from preprocess import transform_samples, pipeline_signal, represent_signal, segment_dataset, segment_signal
 from dataset import annotate_inference
 
 # %%

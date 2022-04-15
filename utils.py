@@ -11,6 +11,10 @@ def merge_dicts(base_dict, *dicts):
     return dict3
 
 
+def arr_dimen(a):
+    return [len(a)]+arr_dimen(a[0]) if(type(a) == list) else []
+
+
 if __name__ == '__main__':
     base = {
         'a': [],
