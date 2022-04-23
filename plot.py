@@ -7,6 +7,8 @@ import numpy as np
 from praudio import utils
 import seaborn as sns
 
+plt.set_loglevel('WARNING')
+
 
 def plot_confusion_matrix(confusion_matrix, size, save_path=''):
     fig, ax = plt.subplots(figsize=(max(size/2, 16), max(size/2, 16)))
@@ -85,7 +87,7 @@ def plot_history(history, save_path=''):
 def plot_class_distribution(labels, count, save_path='', filename='class_distribution.jpg'):
     labels = [str(x) for x in labels]
 
-    fig = plt.figure(figsize=(16, 10))
+    fig = plt.figure(figsize=(max(len(labels) * 0.4, 16), 10))
 
     c1 = plt.bar(labels, count)
     plt.bar_label(c1, label_type='center')

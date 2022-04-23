@@ -1,7 +1,9 @@
-from tensorflow import keras
-import tensorflow as tf
+import time
+
 import matplotlib.pyplot as plt
+import tensorflow as tf
 from praudio import utils
+from tensorflow import keras
 
 
 def build_perceptron(output_size: int, shape_size, dense1=512, dropout1=0, dense2=0, dropout2=0, dense3=0, learning_rate=0.0001):
@@ -72,12 +74,26 @@ def train_model(model, epochs, batch_size, patience, X_train, y_train, X_validat
     earlystop_callback = tf.keras.callbacks.EarlyStopping(
         monitor="accuracy", min_delta=0.001, patience=patience)
 
+    time_callback = TimeHistory()
+
     # train model
     history = model.fit(X_train,
                         y_train,
                         epochs=epochs,
                         batch_size=batch_size,
                         validation_data=(X_validation, y_validation),
-                        callbacks=[earlystop_callback],
+                        callbacks=[earlystop_callback, time_callback],
                         verbose=verbose)
-    return history
+
+    return history, time_callback
+
+
+class TimeHistory(keras.callbacks.Callback):
+    def on_train_begin(self, logs={}):
+        self.times = []
+
+    def on_epoch_begin(self, epoch, logs={}):
+        self.epoch_time_start = time.time()
+
+    def on_epoch_end(self, epoch, logs={}):
+        self.times.append(time.time() - self.epoch_time_start)

@@ -45,7 +45,7 @@ def augment_signal(samples: list, augment_size: int = 1):
     return np.tile(samples, (augment_size, 1))
 
 
-def transform_samples(samples: list, sample_rate: int, transformations: list, reduce_noise: float = 0, shuffle: bool = False):
+def transform_samples(samples: list, sample_rate: int, transformations: list, reduce_noise: float = 0.0, filename=""):
     """
     Given a signal, sample rate, a list of transformations, and an augment size,
     this function will return a list of augmented signals
@@ -60,19 +60,30 @@ def transform_samples(samples: list, sample_rate: int, transformations: list, re
     :type augment_size: int
     :return: A list of augmented signals.
     """
-    augment_composition = am.Compose(transformations, shuffle=shuffle)
+    augment_composition = am.Compose(transformations)
 
     if len(samples.shape) == 1:
         if reduce_noise and random() < reduce_noise:
-            samples = nr.reduce_noise(samples, sr=sample_rate)
+            samples = np.abs(nr.reduce_noise(samples, sr=sample_rate))
 
+            has_nan = np.argwhere(np.isnan(sample))
+
+            if has_nan.size > 0:
+                print('SINGLE')
+                return None
         return augment_composition(samples, sample_rate)
 
     aug_samples = []
 
     for sample in samples:
         if reduce_noise and random() < reduce_noise:
-            sample = nr.reduce_noise(sample, sr=sample_rate)
+            sample = np.abs(nr.reduce_noise(sample, sr=sample_rate))
+
+            has_nan = np.argwhere(np.isnan(sample))
+
+            if has_nan.size > 0:
+                print('MULTIPLE')
+                continue
 
         augmented_sample = augment_composition(sample, sample_rate)
 
@@ -202,7 +213,7 @@ def segment_dataset(input_dir: str,
                     segment_length: int = 1,
                     plot_distribution: bool = False,
                     aug_per_segment: bool = False,
-                    reduce_noise: bool = False):
+                    reduce_noise: float = 0.0):
 
     df = pd.read_csv(f'{input_dir}/metadata.csv')
 
@@ -221,7 +232,19 @@ def segment_dataset(input_dir: str,
     }
 
     def _run(i: int):
-        data = {**base_dict}
+        data = {
+            "label": [],
+            "sample_rate": [],
+            "length": [],
+            "artists": [],
+            "album": [],
+            "title": [],
+            "genre": [],
+            "thumbnail": [],
+            "filename": [],
+            "aug_filename": [],
+            "transformations": [],
+        }
 
         row = df.iloc[i, :]
 
@@ -245,13 +268,13 @@ def segment_dataset(input_dir: str,
                                          sample_rate,
                                          base_trans,
                                          reduce_noise,
-                                         shuffle=True)
+                                         row['filename'])
 
         else:
             augmented_signal = transform_samples(signal,
                                                  sample_rate,
                                                  base_trans,
-                                                 1)
+                                                 reduce_noise)
 
             segments = segment_signal(augmented_signal,
                                       sample_rate,
@@ -332,7 +355,8 @@ def segment_dataset(input_dir: str,
 
     # dicts = [_run(i) for i in range(len(df))]
 
-    dicts = Parallel(n_jobs=-1)(delayed(_run)(i) for i in range(len(df)))
+    dicts = Parallel(n_jobs=-1, prefer="processes")(delayed(_run)(i)
+                                                    for i in range(len(df)))
 
     df_dict = merge_dicts(base_dict, *dicts)
 
@@ -358,19 +382,25 @@ def represent_dataset(input_dir, output_dir, **mfcc_params):
     def _run(i: int):
         row = df.iloc[i, :]
 
-        signal, sample_rate = librosa.load(
-            f'{input_dir}/audio/{row["aug_filename"]}',
-            sr=row["sample_rate"],
-            mono=True)
+        try:
+            signal, sample_rate = librosa.load(
+                f'{input_dir}/audio/{row["aug_filename"]}',
+                sr=row["sample_rate"],
+                mono=True)
 
-        representation = represent_signal(signal,
-                                          sample_rate,
-                                          plot=False,
-                                          **mfcc_params)
+            representation = represent_signal(signal,
+                                              sample_rate,
+                                              plot=False,
+                                              **mfcc_params)
+        except Exception as e:
+            print(row['aug_filename'])
+            exit()
 
         return representation
 
     utils.create_dir_hierarchy(f'{output_dir}')
+
+    # representations = [_run(i) for i in range(len(df))]
 
     representations = Parallel(n_jobs=-1)(delayed(_run)(i)
                                           for i in range(len(df)))
@@ -386,19 +416,15 @@ def pipeline_signal(file_path: str = '', sample_rate: int = 24000, segment_lengt
                                 sr=sample_rate,
                                 mono=True)
 
-    augment_array = transform_samples([signal], rate, transformations, 1)
+    transformed_signal = transform_samples(
+        signal, rate, transformations, reduce_noise=False)
 
-    segments_array = []
+    segments_array = segment_signal(transformed_signal,
+                                    rate,
+                                    segment_length,
+                                    overlap_size)
 
     representation_array = []
-
-    for audio in augment_array:
-        segments = segment_signal(audio,
-                                  rate,
-                                  segment_length,
-                                  overlap_size)
-
-        segments_array.extend(segments)
 
     for segment in segments_array:
         audio_rep = represent_signal(segment,
@@ -408,7 +434,7 @@ def pipeline_signal(file_path: str = '', sample_rate: int = 24000, segment_lengt
 
         representation_array.append(audio_rep)
 
-    return np.array(representation_array),  np.array(segments_array), np.array(augment_array)
+    return np.array(representation_array),  np.array(segments_array), np.array(transformed_signal)
 
 
 # %%

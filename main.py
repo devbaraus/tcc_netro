@@ -3,22 +3,25 @@
 import argparse
 import json
 import os
-import audiomentations as am
-import numpy as np
-from sklearn.metrics import confusion_matrix
-import tensorflow as tf
-import matplotlib.pyplot as plt
 import pickle as pkl
 import time
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from preprocess import transform_samples, segment_signal, represent_signal, represent_dataset, segment_dataset
 
+import audiomentations as am
+import numpy as np
+import tensorflow as tf
 from praudio import utils
+from sklearn.preprocessing import StandardScaler
 
-from dataset import split_dataset, annotate_dataset
+from dataset import annotate_dataset
 from loaders import load_mat_representation
 from plot import plot_class_distribution, plot_confusion_matrix, plot_history
+from preprocess import represent_dataset, segment_dataset
 from train import build_perceptron, train_model
+
+gpu_devices = tf.config.experimental.list_physical_devices('GPU')
+
+for device in gpu_devices:
+    tf.config.experimental.set_memory_growth(device, True)
 
 parser = argparse.ArgumentParser(description='Arguments algo')
 
@@ -47,7 +50,6 @@ MODELS_DIR = '/src/tcc_netro/models'
 DATASET_DIR = args.base or 'spotify_20'
 
 ANNOTATE_DATASET = False
-SPLIT_DATESET = False
 SEGMENT_TEST = True
 SEGMENT_TRAIN = True
 SEGMENT_VALID = True
@@ -56,9 +58,9 @@ REPRESENT_TRAIN = True
 REPRESENT_VALID = True
 
 # MODEL ARCHITECTURE
-MODEL_DENSE_1 = 30
+MODEL_DENSE_1 = 140
 MODEL_DROPOUT_1 = 0.3
-MODEL_DENSE_2 = 30
+MODEL_DENSE_2 = 130
 MODEL_DROPOUT_2 = 0
 MODEL_DENSE_3 = 0
 
@@ -70,9 +72,9 @@ LEARNING_RATE = 0.0001
 
 # SEGMENTATION
 SAMPLE_RATE = 24000
-SEGMENT_LENGTH = args.segment or 1
+SEGMENT_LENGTH = args.segment or 5
 OVERLAP_SIZE = args.overlap or 0.0
-AUGMENT_SIZE = args.augmentation or 30
+AUGMENT_SIZE = args.augmentation or 0
 
 # REPRESENTATION
 MFCC_COEFF = args.coeff or 40
@@ -87,15 +89,7 @@ if ANNOTATE_DATASET and not os.path.exists(f'{ANNOTATE_DIR}/{DATASET_DIR}'):
                      plot_distribution=True)
 
 # %%
-if SPLIT_DATESET and not os.path.exists(f'{ANNOTATE_DIR}/{DATASET_DIR}/train'):
-    split_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
-                  f'{ANNOTATE_DIR}/{DATASET_DIR}',
-                  validation=True,
-                  plot_distribution=True)
-
-# %%
 BASE_TRANSFORM = [
-    # am.Trim(top_db=20, p=1),
     am.Normalize(p=1),
 ]
 
@@ -103,23 +97,14 @@ TRAIN_TRANSFORM = [
     am.AddGaussianSNR(min_snr_in_db=24, max_snr_in_db=40, p=0.8),
     am.HighPassFilter(min_cutoff_freq=60, max_cutoff_freq=100, p=0.8),
     am.LowPassFilter(min_cutoff_freq=3400, max_cutoff_freq=10000, p=0.8),
-    # am.TimeStretch(min_rate=0.75, max_rate=2,
-    #                leave_length_unchanged=False, p=0.5),
 ]
-
-# TEST_VALID_TRANSFORM = [
-#     am.AddGaussianSNR(min_snr_in_db=24, max_snr_in_db=40, p=0.5),
-#     am.HighPassFilter(min_cutoff_freq=60, max_cutoff_freq=100, p=0.5),
-#     am.LowPassFilter(min_cutoff_freq=3400, max_cutoff_freq=10000, p=0.5),
-#     # am.TimeStretch(min_rate=0.75, max_rate=2,
-#     #                leave_length_unchanged=True, p=0.5),
-# ]
 
 # %%
 BASE_DIR = f'{ANNOTATE_DIR}/{DATASET_DIR}/SEG_{SEGMENT_LENGTH}_OVERLAP_{int(OVERLAP_SIZE*100)}_AUG_{AUGMENT_SIZE}'
 
 # %%
 if SEGMENT_TEST and not os.path.exists(f'{BASE_DIR}/test'):
+    print('SEG TEST')
     segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
                     f'{BASE_DIR}/test',
                     base_trans=[*BASE_TRANSFORM, *TRAIN_TRANSFORM],
@@ -128,8 +113,12 @@ if SEGMENT_TEST and not os.path.exists(f'{BASE_DIR}/test'):
                     plot_distribution=True,
                     aug_per_segment=True,
                     reduce_noise=0.2)
+
+# exit()
 # %%
+
 if SEGMENT_VALID and not os.path.exists(f'{BASE_DIR}/valid'):
+    print('SEG VALID')
     segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
                     f'{BASE_DIR}/valid',
                     base_trans=[*BASE_TRANSFORM, *TRAIN_TRANSFORM],
@@ -141,6 +130,7 @@ if SEGMENT_VALID and not os.path.exists(f'{BASE_DIR}/valid'):
 
 # %%
 if SEGMENT_TRAIN and not os.path.exists(f'{BASE_DIR}/train'):
+    print('SEG TRAIN')
     segment_dataset(f'{ANNOTATE_DIR}/{DATASET_DIR}',
                     f'{BASE_DIR}/train',
                     base_trans=BASE_TRANSFORM,
@@ -153,6 +143,7 @@ if SEGMENT_TRAIN and not os.path.exists(f'{BASE_DIR}/train'):
 # exit()
 # %% REPRESENTATION
 if REPRESENT_TEST and not os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/test'):
+    print('REP TEST')
     mat_dict_test = represent_dataset(f'{BASE_DIR}/test',
                                       f'{BASE_DIR}/MFCC_{MFCC_COEFF}/test',
                                       n_mfcc=MFCC_COEFF,
@@ -160,6 +151,8 @@ if REPRESENT_TEST and not os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/test'):
                                       hop_length=MFCC_HOP_LENGTH)
 # %%
 if REPRESENT_VALID and not os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/valid'):
+    print('REP VALID')
+
     mat_dict_valid = represent_dataset(f'{BASE_DIR}/valid',
                                        f'{BASE_DIR}/MFCC_{MFCC_COEFF}/valid',
                                        n_mfcc=MFCC_COEFF,
@@ -167,6 +160,8 @@ if REPRESENT_VALID and not os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/valid')
                                        hop_length=MFCC_HOP_LENGTH)
 # %%
 if REPRESENT_TRAIN and not os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/train'):
+    print('REP TRAIN')
+
     mat_dict_train = represent_dataset(f'{BASE_DIR}/train',
                                        f'{BASE_DIR}/MFCC_{MFCC_COEFF}/train',
                                        n_mfcc=MFCC_COEFF,
@@ -188,13 +183,16 @@ if not REPRESENT_VALID or os.path.exists(f'{BASE_DIR}/MFCC_{MFCC_COEFF}/valid'):
     mat_dict_valid = load_mat_representation(
         f'{BASE_DIR}/MFCC_{MFCC_COEFF}/valid/representation.mat')
 
+# exit()
 # %% NP.ARRAY
 unique_labels = list(set(mat_dict_train['label']))
 
 X_train = np.array(mat_dict_train['representation'])
 y_train = np.array(mat_dict_train['label'])
+
 X_valid = np.array(mat_dict_valid['representation'])
 y_valid = np.array(mat_dict_valid['label'])
+
 X_test = np.array(mat_dict_test['representation'])
 y_test = np.array(mat_dict_test['label'])
 # %% SCALER
@@ -206,8 +204,16 @@ X_valid_rep = tf.convert_to_tensor(se.transform(
     X_valid.reshape(-1, X_valid.shape[-1])).reshape(X_valid.shape))
 X_test_rep = tf.convert_to_tensor(se.transform(
     X_test.reshape(-1, X_test.shape[-1])).reshape(X_test.shape))
+# X_train_rep = tf.convert_to_tensor(X_train)
+# X_test_rep = tf.convert_to_tensor(X_test)
+# X_valid_rep = tf.convert_to_tensor(X_valid)
 
-
+# print(X_train_rep.shape)
+# print(X_valid_rep.shape)
+# print(X_test_rep.shape)
+# print(y_train.shape)
+# print(y_valid.shape)
+# print(y_test.shape)
 # %% BUILD MODEL
 model = build_perceptron(output_size=len(unique_labels),
                          shape_size=X_train_rep.shape,
@@ -221,20 +227,22 @@ model = build_perceptron(output_size=len(unique_labels),
 # %% MODEL SUMMARY
 model_arch = model.to_json()
 # model.summary()
-# model.summary()
+# exit()
 
 # %% TRAIN MODEL
-history = train_model(model,
-                      epochs=EPOCHS,
-                      batch_size=BATCH_SIZE,
-                      patience=PATIENCE,
-                      X_train=X_train_rep,
-                      y_train=y_train,
-                      X_validation=X_valid_rep,
-                      y_validation=y_valid,
-                      verbose=2)
+history, time_history = train_model(model,
+                                    epochs=EPOCHS,
+                                    batch_size=BATCH_SIZE,
+                                    patience=PATIENCE,
+                                    X_train=X_train_rep,
+                                    y_train=y_train,
+                                    X_validation=X_valid_rep,
+                                    y_validation=y_valid,
+                                    verbose=2)
 
+# print(time_history.times)
 
+# exit()
 # %%
 test_loss, test_acc = model.evaluate(X_test_rep,
                                      y_test,
@@ -298,6 +306,8 @@ overview = {
     'train_shape': X_train_rep.numpy().shape,
     'valid_shape': X_valid_rep.numpy().shape,
     'test_shape': X_test_rep.numpy().shape,
+
+    'train_time': sum(time_history.times),
 
     'scores': {
         'test_loss': test_loss,

@@ -1,0 +1,44 @@
+{
+    "dataset_dir": "spotify_60",
+    "classes": 60,
+    "segment_length": 5,
+    "sample_rate": 24000,
+    "augment_size": 5,
+    "overlap_size": 0.0,
+    "train_shape": [
+        15870,
+        40,
+        235
+    ],
+    "valid_shape": [
+        2645,
+        40,
+        235
+    ],
+    "test_shape": [
+        2645,
+        40,
+        235
+    ],
+    "train_time": 75.19436883926392,
+    "scores": {
+        "test_loss": 0.02938193455338478,
+        "test_acc": 0.9901701211929321,
+        "train_loss": 0.04012945294380188,
+        "train_acc": 0.98764967918396,
+        "valid_loss": 0.04746172949671745,
+        "valid_acc": 0.9897920489311218
+    },
+    "training_params": {
+        "epochs": 1000,
+        "batch_size": 32,
+        "patience": 20,
+        "learning_rate": 0.0001
+    },
+    "representation": {
+        "name": "MFCC",
+        "n_mfcc": 40,
+        "n_fft": 2048,
+        "hop_length": 512
+    }
+}
